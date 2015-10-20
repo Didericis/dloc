@@ -1,0 +1,114 @@
+#!/bin/bash
+
+dlocDirName="dloc"
+dlocDir=""
+curDir=$(pwd)
+dlocJson="$curDir/dloc.json"
+deps=();
+arg=$1;
+
+#Changes to first parent with a dloc.json
+function cdToDloc {
+    cd ..;
+    while [ ! -d "$dlocDirName" ]; do
+        cd ..;
+    done;
+    cd "$dlocDirName";
+    dlocDir=$(pwd);
+}
+
+function getRepo {
+    echo "git@bitbucket.org:didericis/$1.git";
+}
+
+function getPackageName {
+    echo $(echo $1 | sed "s/dloc-//g");
+}
+
+function mkLocalRef {
+    local package=$1;
+    local version=$2;
+
+    cd $curDir;
+    if [ ! -d "dloc" ]; then
+        mkdir dloc;
+    fi;
+    echo "return require('dloc.$package.$version.main')" > "dloc/$package.lua";
+    cd $dlocDir;
+}
+
+function mkVersionLua {
+    if [ "$1" == "*" ]; then
+        echo "*";
+    else
+        local versionLua=$(echo $1 | sed "s/v//g");
+        echo $(echo $versionLua | sed "s/\./-/g");
+    fi;
+}
+
+function installDep {
+    local dep=$1;
+    local dlocJson=$2;
+    echo "$dlocJson";
+    local versionRaw=$(jq ".dependencies[\"$dep\"]" $dlocJson); 
+    local version=$(echo $versionRaw | sed "s/[,\"\"]//g");
+    local packageName=$(getPackageName $dep);
+    local packageFolder="$dlocDir/$packageName";
+    local repoName=$(getRepo $dep);
+    local versionLua=$(mkVersionLua "$version");
+    echo "1st: $versionLua";
+
+    cd $dlocDir;
+    if [ ! -d $packageName ]; then
+        mkdir $packageName;
+    fi;
+    
+    cd $packageFolder;
+    if [[ ("$version" != '*') && (! -d $versionLua) ]]; then
+        echo "Installing $dep from $repoName...";
+        git clone --branch "v$version" "$repoName" "$versionLua" &> /dev/null; 
+    elif [ ! "$(ls)" ]; then
+        echo "Installing $dep from $repoName...";
+        git clone $repoName tmp &> /dev/null; 
+        cd tmp;
+        branch=$(git describe --tags `git rev-list --tags --max-count=1`);
+        versionLua=$(mkVersionLua $branch);
+        echo "2nd: $versionLua";
+        cd ..;
+        mv tmp $versionLua;
+    else
+        versionLua=$(mkVersionLua $version);
+        echo "3rd; $versionLua";
+    fi;
+
+    mkLocalRef "$packageName" "$versionLua";
+    cd "$packageFolder/$versionLua";
+    if [ -f "dloc.json" ]; then
+        installAllDeps "dloc.json";
+    fi;
+}
+
+function installAllDeps {
+    local depsJson=$(jq '.dependencies' $1);
+    if [ "$depsJson" != "null" ]; then
+        local depsRaw=($(jq '.dependencies' $1 | jq 'keys' | sed "s|[,\"\"]||g"));
+        for i in "${!depsRaw[@]}"; do
+            local dep="${depsRaw[$i]}";
+            if [[ ($dep != "[") && ($dep != "]") ]]; then
+                installDep $dep $depsJson;
+            fi;
+        done;
+        echo "Install successful!";
+    else
+        echo "Nothing to install.";
+    fi;
+}
+
+function install {
+    cdToDloc;
+    installAllDeps $dlocJson;
+}
+
+if [ "$arg" == "install" ]; then
+    install;
+fi;
