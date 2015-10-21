@@ -2,11 +2,12 @@
 
 dlocDirName="dloc"                                          #Name of folder for all dloc packages, and for folder containing local package references
 dlocDir="/Users/eric/Games/Minecraft/Profiles/\
-         1.7.10.DidiTech/saves/Makosh/opencomputers/\
-         854e236c-4266-4363-9322-5a5cb7457521/$dlocDirName" #Locaction of folder for all dloc packages
+1.7.10.DidiTech/saves/Makosh/opencomputers/\
+854e236c-4266-4363-9322-5a5cb7457521/$dlocDirName"          #Locaction of folder for all dloc packages
 dlocJsonName="dloc.json"                                    #Name of file containing info for dloc packages
 curDir=$(pwd)                                               #Location where script was invoked
 arg=$1;                                                     #Command issued
+newDeps=()                                                  #Array of new dependencies (to check for sub dependencies)
 
 function getRepo {
     echo "git@bitbucket.org:didericis/$1.git";
@@ -49,11 +50,30 @@ function installSubDeps {
     fi;
 }
 
-function installDep {
+function addIfNewDep {
     local dep=$1;
 
-    local versionRaw=$(jq ".dependencies[\"$dep\"]" $dlocJsonName); 
-    local version=$(echo $versionRaw | sed "s/[,\"\"]//g");
+    for i in "${!depsRaw[@]}"; do
+        if [ "${depsRaw[$i]}" == "$dep" ]; then
+            newDeps+=($dep);
+            break;
+        fi
+    done
+}
+
+function isNewDep {
+    for i in "${!depsRaw[@]}"; do
+        if [ "${depsRaw[$i]}" == "$dep" ]; then
+            echo false;
+        fi
+    done
+    echo true;
+}
+
+function installDep {
+    local dep=$1;
+    local version=$2;
+
     local packageName=$(getPackageName $dep);
     local packageFolder="$dlocDir/$packageName";
     local repoName=$(getRepo $dep);
@@ -61,14 +81,14 @@ function installDep {
 
     cd $dlocDir;
     if [ ! -d $packageName ]; then
-        echo "Making room for new dep $dep...";
         mkdir $packageName;
     fi;
     
     cd $packageFolder;
     if [[ ("$version" != '*') && (! -d $versionLua) ]]; then
-        echo "Installing $dep from $repoName...";
+        echo "Installing $dep $version from $repoName...";
         git clone --branch "v$version" "$repoName" "$versionLua" &> /dev/null; 
+        addIfNewDep $dep;
     elif [ ! "$(ls)" ]; then
         echo "Installing $dep from $repoName...";
         git clone $repoName tmp &> /dev/null; 
@@ -77,33 +97,41 @@ function installDep {
         versionLua=$(mkVersionLua $branch);
         cd ..;
         mv tmp $versionLua;
+        addIfNewDep $dep;
     else
+        echo "Package $dep already installed."
         versionLua=$(mkVersionLua $version);
     fi;
 
     mkLocalRef "$packageName" "$versionLua";
 }
 
-#Installs all dependencies in the dloc.json file found in the current directory
+#Installs all dependencies in the dloc.json file found in the directory passed
 function installAllDeps {
-    local depsJson=$(jq '.dependencies' $dlocJsonName);
+    local packageDir=$1;
 
-    if [ "$depsJson" != "null" ]; then
+    cd $packageDir;
+    if [ -f $dlocJsonName ]; then
         local depsRaw=($(jq '.dependencies' $dlocJsonName | jq 'keys' | sed "s|[,\"\{\}\[\]||g"));
         for i in "${!depsRaw[@]}"; do
             local dep="${depsRaw[$i]}";
-            if [[ ($dep != "[") && ($dep != "]") ]]; then
-                installDep $dep;
+            if [[ ($dep != "[") && ($dep != "]") && $(isNewDep $dep) ]]; then
+                local versionRaw=$(jq ".dependencies[\"$dep\"]" $dlocJsonName); 
+                local version=$(echo $versionRaw | sed "s/[,\"\"]//g");
+                installDep "$dep" "$version";
+                cd $packageDir;
+            elif [[ ($dep != "[") && ($dep != "]") ]]; then
+                echo "Dep already installed.";
             fi;
         done;
         echo "Install successful!";
     else
-        echo "Nothing to install.";
+        echo "No $dlocJsonName found.";
     fi;
 }
 
 function install {
-    installAllDeps;
+    installAllDeps $curDir;
 }
 
 if [ "$arg" == "install" ]; then
