@@ -1,29 +1,21 @@
 #!/usr/local/bin/bash
 
-dlocDirName="dloc"
-dlocJsonName="dloc.json"
-dlocDir=""
-curDir=$(pwd)
-dlocJson="$curDir/dloc.json"
-deps=();
-arg=$1;
-
-#Changes to first parent with a dloc.json
-function cdToDloc {
-    cd ..;
-    while [ ! -d "$dlocDirName" ]; do
-        cd ..;
-    done;
-    cd "$dlocDirName";
-    dlocDir=$(pwd);
-}
+dlocDirName="dloc"                                          #Name of folder for all dloc packages, and for folder containing local package references
+dlocDir="/Users/eric/Games/Minecraft/Profiles/\
+         1.7.10.DidiTech/saves/Makosh/opencomputers/\
+         854e236c-4266-4363-9322-5a5cb7457521/$dlocDirName" #Locaction of folder for all dloc packages
+dlocJsonName="dloc.json"                                    #Name of file containing info for dloc packages
+curDir=$(pwd)                                               #Location where script was invoked
+arg=$1;                                                     #Command issued
 
 function getRepo {
     echo "git@bitbucket.org:didericis/$1.git";
 }
 
 function getPackageName {
-    echo $(echo $1 | sed "s/dloc-//g");
+    local packageNameRaw=$1
+
+    echo $(echo $packageNameRaw | sed "s/dloc-//g");
 }
 
 function mkLocalRef {
@@ -31,7 +23,7 @@ function mkLocalRef {
     local version=$2;
 
     cd $curDir;
-    if [ ! -d $dlocDir ]; then
+    if [ ! -d $dlocDirName ]; then
         mkdir dloc;
     fi;
     echo "return require('dloc.$package.$version.main')" > "dloc/$package.lua";
@@ -47,20 +39,29 @@ function mkVersionLua {
     fi;
 }
 
+function installSubDeps {
+    local packageFolder=$1;
+    local versionLua=$2;
+
+    cd "$packageFolder/$versionLua";
+    if [ -f "dloc.json" ]; then
+        installAllDeps;
+    fi;
+}
+
 function installDep {
     local dep=$1;
-    local dlocJson=$2;
-    echo "DLOCJSON $dlocJson";
-    local versionRaw=$(jq ".dependencies[\"$dep\"]" $dlocJson); 
+
+    local versionRaw=$(jq ".dependencies[\"$dep\"]" $dlocJsonName); 
     local version=$(echo $versionRaw | sed "s/[,\"\"]//g");
     local packageName=$(getPackageName $dep);
     local packageFolder="$dlocDir/$packageName";
     local repoName=$(getRepo $dep);
     local versionLua=$(mkVersionLua "$version");
-    echo "1st: $versionLua";
 
     cd $dlocDir;
     if [ ! -d $packageName ]; then
+        echo "Making room for new dep $dep...";
         mkdir $packageName;
     fi;
     
@@ -81,20 +82,18 @@ function installDep {
     fi;
 
     mkLocalRef "$packageName" "$versionLua";
-    cd "$packageFolder/$versionLua";
-    if [ -f "dloc.json" ]; then
-        installAllDeps "dloc.json";
-    fi;
 }
 
+#Installs all dependencies in the dloc.json file found in the current directory
 function installAllDeps {
-    local depsJson=$(jq '.dependencies' $1);
+    local depsJson=$(jq '.dependencies' $dlocJsonName);
+
     if [ "$depsJson" != "null" ]; then
-        local depsRaw=($(jq '.dependencies' $1 | jq 'keys' | sed "s|[,\"\{\}\[\]||g"));
+        local depsRaw=($(jq '.dependencies' $dlocJsonName | jq 'keys' | sed "s|[,\"\{\}\[\]||g"));
         for i in "${!depsRaw[@]}"; do
             local dep="${depsRaw[$i]}";
             if [[ ($dep != "[") && ($dep != "]") ]]; then
-                installDep $dep $depsJson;
+                installDep $dep;
             fi;
         done;
         echo "Install successful!";
@@ -104,8 +103,7 @@ function installAllDeps {
 }
 
 function install {
-    cdToDloc;
-    installAllDeps $dlocJson;
+    installAllDeps;
 }
 
 if [ "$arg" == "install" ]; then
