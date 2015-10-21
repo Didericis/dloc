@@ -1,6 +1,7 @@
-#!/bin/bash
+#!/usr/local/bin/bash
 
 dlocDirName="dloc"
+dlocJsonName="dloc.json"
 dlocDir=""
 curDir=$(pwd)
 dlocJson="$curDir/dloc.json"
@@ -30,7 +31,7 @@ function mkLocalRef {
     local version=$2;
 
     cd $curDir;
-    if [ ! -d "dloc" ]; then
+    if [ ! -d $dlocDir ]; then
         mkdir dloc;
     fi;
     echo "return require('dloc.$package.$version.main')" > "dloc/$package.lua";
@@ -49,7 +50,7 @@ function mkVersionLua {
 function installDep {
     local dep=$1;
     local dlocJson=$2;
-    echo "$dlocJson";
+    echo "DLOCJSON $dlocJson";
     local versionRaw=$(jq ".dependencies[\"$dep\"]" $dlocJson); 
     local version=$(echo $versionRaw | sed "s/[,\"\"]//g");
     local packageName=$(getPackageName $dep);
@@ -73,12 +74,10 @@ function installDep {
         cd tmp;
         branch=$(git describe --tags `git rev-list --tags --max-count=1`);
         versionLua=$(mkVersionLua $branch);
-        echo "2nd: $versionLua";
         cd ..;
         mv tmp $versionLua;
     else
         versionLua=$(mkVersionLua $version);
-        echo "3rd; $versionLua";
     fi;
 
     mkLocalRef "$packageName" "$versionLua";
@@ -91,7 +90,7 @@ function installDep {
 function installAllDeps {
     local depsJson=$(jq '.dependencies' $1);
     if [ "$depsJson" != "null" ]; then
-        local depsRaw=($(jq '.dependencies' $1 | jq 'keys' | sed "s|[,\"\"]||g"));
+        local depsRaw=($(jq '.dependencies' $1 | jq 'keys' | sed "s|[,\"\{\}\[\]||g"));
         for i in "${!depsRaw[@]}"; do
             local dep="${depsRaw[$i]}";
             if [[ ($dep != "[") && ($dep != "]") ]]; then
