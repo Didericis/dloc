@@ -40,30 +40,9 @@ function mkVersionLua {
     fi;
 }
 
-function installSubDeps {
-    local packageFolder=$1;
-    local versionLua=$2;
-
-    cd "$packageFolder/$versionLua";
-    if [ -f "dloc.json" ]; then
-        installAllDeps;
-    fi;
-}
-
-function addIfNewDep {
-    local dep=$1;
-
-    for i in "${!depsRaw[@]}"; do
-        if [ "${depsRaw[$i]}" == "$dep" ]; then
-            newDeps+=($dep);
-            break;
-        fi
-    done
-}
-
 function isNewDep {
-    for i in "${!depsRaw[@]}"; do
-        if [ "${depsRaw[$i]}" == "$dep" ]; then
+    for i in "${!newDeps[@]}"; do
+        if [ "${newDeps[$i]}" == "$dep" ]; then
             echo false;
         fi
     done
@@ -88,7 +67,6 @@ function installDep {
     if [[ ("$version" != '*') && (! -d $versionLua) ]]; then
         echo "Installing $dep $version from $repoName...";
         git clone --branch "v$version" "$repoName" "$versionLua" &> /dev/null; 
-        addIfNewDep $dep;
     elif [ ! "$(ls)" ]; then
         echo "Installing $dep from $repoName...";
         git clone $repoName tmp &> /dev/null; 
@@ -97,12 +75,13 @@ function installDep {
         versionLua=$(mkVersionLua $branch);
         cd ..;
         mv tmp $versionLua;
-        addIfNewDep $dep;
     else
         echo "Package $dep already installed."
         versionLua=$(mkVersionLua $version);
     fi;
 
+    newDeps+=($dep);
+    installAllDeps "$dlocDir/$packageName/$versionLua";
     mkLocalRef "$packageName" "$versionLua";
 }
 
@@ -124,7 +103,6 @@ function installAllDeps {
                 echo "Dep already installed.";
             fi;
         done;
-        echo "Install successful!";
     else
         echo "No $dlocJsonName found.";
     fi;
