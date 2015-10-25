@@ -1,4 +1,4 @@
-# Didericis's Library for Open Computers (dloc)
+# Didericis's Library for Open Computers
 
 dloc is a very small, npm-ish package manager for [opencomputers](http://ocdoc.cil.li/). It was created because oppm (the current pacakage management system for opencomputers) does not allow for multiple versions of the same dependencies.
 
